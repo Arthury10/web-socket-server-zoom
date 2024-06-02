@@ -1,6 +1,7 @@
 import express from "express";
 import http from "http";
 import { Server } from "socket.io";
+import cors from "cors";
 
 class Main {
   private app: express.Application;
@@ -12,6 +13,13 @@ class Main {
   constructor(port: number = 4000) {
     this.port = port;
     this.app = express();
+    this.app.use(
+      cors({
+        origin: "*",
+        methods: ["GET", "POST"],
+        allowedHeaders: ["Content-Type"],
+      })
+    );
     this.server = http.createServer(this.app);
     this.io = new Server(this.server, {
       cors: {
