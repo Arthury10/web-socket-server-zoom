@@ -7,6 +7,7 @@ class Main {
   private server: http.Server;
   private io: Server;
   private port: number;
+  private users: { name: string; id: string }[] = [];
 
   constructor(port: number = 4000) {
     this.port = port;
@@ -49,6 +50,12 @@ class Main {
 
       socket.on("disconnect", () => {
         console.log("user disconnected");
+        this.removeUser(socket.id);
+      });
+
+      socket.on("join-room", (name) => {
+        this.addUser(name, socket.id);
+        this.io.emit("user-joined", this.users);
       });
 
       socket.on("offer", (description) => {
@@ -73,6 +80,18 @@ class Main {
     this.server.listen(this.port, () => {
       console.log(`Example app listening on port ${this.port}`);
     });
+  }
+
+  private addUser(name: string, id: string) {
+    this.users.push({ name, id });
+  }
+
+  private removeUser(id: string) {
+    this.users = this.users.filter((user) => user.id !== id);
+  }
+
+  private getUser(id: string) {
+    return this.users.find((user) => user.id === id);
   }
 }
 
