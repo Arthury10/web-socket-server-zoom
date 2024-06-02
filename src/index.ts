@@ -7,7 +7,7 @@ class Main {
   private server: http.Server;
   private io: Server;
   private port: number;
-  private users: { name: string; id: string }[] = [];
+  private users: { name: string; id: string; rooms: string[] }[] = [];
 
   constructor(port: number = 4000) {
     this.port = port;
@@ -50,28 +50,62 @@ class Main {
 
       socket.on("disconnect", () => {
         console.log("user disconnected");
-        this.removeUser(socket.id);
+        const user = this.getUser(socket.id);
+        if (user) {
+          this.removeUser(socket.id);
+          user.rooms.forEach((room) => {
+            socket.to(room).emit("user-disconnected", socket.id);
+          });
+        }
       });
 
-      socket.on("join-room", (name) => {
-        this.addUser(name, socket.id);
-        this.io.emit("user-joined", this.users);
+      socket.on("join-room", (name: string, room: string) => {
+        socket.join(room);
+        this.addUserToRoom(name, socket.id, room);
+        socket.to(room).emit("user-joined", socket.id);
       });
 
-      socket.on("offer", (description) => {
-        socket.broadcast.emit("offer", socket.id, description);
+      socket.on("offer", (id, description) => {
+        const user = this.getUser(socket.id);
+        if (user) {
+          user.rooms.forEach((room) => {
+            socket.to(room).emit("offer", id, description);
+          });
+        }
       });
 
       socket.on("answer", (id, description) => {
-        socket.to(id).emit("answer", description);
+        const user = this.getUser(socket.id);
+        if (user) {
+          user.rooms.forEach((room) => {
+            socket.to(room).emit("answer", id, description);
+          });
+        }
       });
 
-      socket.on("candidate", (candidate) => {
-        socket.broadcast.emit("candidate", socket.id, candidate);
+      socket.on("candidate", (id, candidate) => {
+        const user = this.getUser(socket.id);
+        if (user) {
+          if (
+            candidate &&
+            candidate.sdpMid !== null &&
+            candidate.sdpMLineIndex !== null
+          ) {
+            user.rooms.forEach((room) => {
+              socket.to(room).emit("candidate", id, candidate);
+            });
+          } else {
+            console.error("Invalid ICE candidate", candidate);
+          }
+        }
       });
 
-      socket.on("sendMessage", (msg) => {
-        this.io.emit("receiveMessage", msg);
+      socket.on("sendMessage", ({ room, msg }) => {
+        const user = this.getUser(socket.id);
+        if (user) {
+          socket.to(room).emit("message", { user, msg });
+          socket.emit("message", { user, msg }); // Emit the message to the sender
+        }
       });
     });
   }
@@ -82,8 +116,15 @@ class Main {
     });
   }
 
-  private addUser(name: string, id: string) {
-    this.users.push({ name, id });
+  private addUserToRoom(name: string, id: string, room: string) {
+    let user = this.getUser(id);
+    if (user) {
+      if (!user.rooms.includes(room)) {
+        user.rooms.push(room);
+      }
+    } else {
+      this.users.push({ name, id, rooms: [room] });
+    }
   }
 
   private removeUser(id: string) {
