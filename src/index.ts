@@ -8,7 +8,7 @@ class Main {
   private server: http.Server;
   private io: Server;
   private port: number;
-  private users: { name: string; id: string }[] = [];
+  private users: { name: string; id: string; room: string }[] = [];
 
   constructor(port: number = 4000) {
     this.port = port;
@@ -59,47 +59,59 @@ class Main {
       socket.on("disconnect", () => {
         console.log("user disconnected");
         this.removeUser(socket.id);
+        this.io.emit("user-disconnected", socket.id);
       });
 
-      socket.on("join-room", (name) => {
-        this.addUser(name, socket.id);
-        this.io.emit("user-joined", this.users);
+      socket.on("join-room", (room, name) => {
+        const existingUser = this.users.find((user) => user.id === socket.id);
+        if (!existingUser) {
+          socket.join(room);
+          this.addUser(socket.id, room, name);
+          socket.to(room).emit("user-connected", socket.id);
+        }
       });
 
-      socket.on("offer", (description) => {
-        socket.broadcast.emit("offer", socket.id, description);
+      socket.on("offer", (room, description, to) => {
+        socket.to(to).emit("offer", socket.id, description);
       });
 
-      socket.on("answer", (id, description) => {
-        socket.to(id).emit("answer", description);
+      socket.on("answer", (room, description, to) => {
+        socket.to(to).emit("answer", socket.id, description);
       });
 
-      socket.on("candidate", (candidate) => {
-        socket.broadcast.emit("candidate", socket.id, candidate);
+      socket.on("candidate", (room, candidate, to) => {
+        socket.to(to).emit("candidate", socket.id, candidate);
       });
 
-      socket.on("sendMessage", (msg) => {
-        this.io.emit("receiveMessage", msg);
+      socket.on("sendMessage", (room, msg) => {
+        const user = this.users.find((user) => user.id === socket.id);
+        this.io
+          .to(room)
+          .emit("receiveMessage", { message: msg, user: user?.name });
+
+        console.log("users: ", this.users);
+
+        console.log("socketsID", this.io.sockets.adapter.rooms.get(room));
       });
     });
   }
 
   private startServer(): void {
     this.server.listen(this.port, () => {
-      console.log(`Example app listening on port ${this.port}`);
+      console.log(`Server listening on port ${this.port}`);
     });
   }
 
-  private addUser(name: string, id: string) {
-    this.users.push({ name, id });
+  private addUser(id: string, room: string, name: string) {
+    this.users.push({
+      id,
+      room,
+      name,
+    });
   }
 
   private removeUser(id: string) {
     this.users = this.users.filter((user) => user.id !== id);
-  }
-
-  private getUser(id: string) {
-    return this.users.find((user) => user.id === id);
   }
 }
 
